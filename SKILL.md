@@ -109,43 +109,65 @@ Step 8: 飞书通知审核
 
 ---
 
-## Step 1: 热点采集
+## Step 1: 热点采集（X 平台为主）
 
-### 数据源
+### 采集策略
 
-```bash
-# 1. 6551 API — Twitter/X AI 圈
-python3 ~/.hermes/skills/xiaohui-meta-image/scripts/topic_collector.py \
-  --track xiaohongshu-ai-tools --limit 20 --format json \
-  --output /tmp/ai-topics-twitter.json
-
-# 2. 6551 API — 新闻
-python3 ~/.hermes/skills/xiaohui-meta-image/scripts/topic_collector.py \
-  --keywords "AI工具,ChatGPT,Claude,DeepSeek,AI应用,AI创业,AI变现,AI Agent" \
-  --source news --limit 20 --format json \
-  --output /tmp/ai-topics-news.json
-
-# 3. Web Search 补充
-web_search("AI工具 小团队 落地 2026")
-web_search("AI Agent 创业 变现 案例")
-web_search("AI 替代人工 省成本 小老板")
-```
-
-### 采集关键词池（围绕受众痛点）
+**X/Twitter 是第一信源**，中英文科技媒体为补充。
 
 ```
-高优先：AI Agent 落地, AI 替代人工, AI 省成本, AI 自动化运营
-中优先：DeepSeek, Claude, GPT 新功能, AI 编程, AI 工具实测
-低优先：AI 融资, AI 政策, AI 学术论文（离受众远）
+三路并行搜索（用 delegate_task 并发）：
+
+路线 A — X 英文圈（最重要）
+  搜索方式：web_search("site:x.com {关键词}")
+  关键词池：AI tool launch, AI agent, Claude Code, GPT, DeepSeek,
+           AI startup, AI layoffs, coding agent, one-person company,
+           AI productivity, AI replace jobs
+  目标：找 KOL 推文（@levelsio @dotey @op7418 @kaborage 等）
+  输出：每条给出 作者、核心内容、讨论热度、URL
+
+路线 B — X 中文圈
+  搜索方式：web_search("site:x.com {中文关键词}")
+  关键词池：AI工具, 大模型, DeepSeek, Claude, AI创业,
+           一人公司, AI Agent, Coding Agent, vibe coding
+  目标：宝玉(@dotey)、歸藏(@op7418)、SagaSu 等中文 KOL 在聊什么
+  输出：同上
+
+路线 C — 中文科技媒体补充
+  搜索方式：web_search("{关键词} 36kr OR 虎嗅 OR 量子位")
+  目标：补充 X 上没覆盖到的国内热点
+  输出：标题、来源、核心事实
+
+时间窗口：仅看 48 小时内的新鲜内容，过期不要。
+每路至少出 10 条候选 → 三路合并去重 → 15-20 条进入筛选。
+```
+
+### 采集关键词矩阵（围绕受众痛点）
+
+```
+高优先（直击省钱/赚钱）：
+  AI Agent 落地, AI 替代人工, AI 省成本, AI 自动化运营,
+  one-person company, AI coding tool, AI 客服
+
+中优先（工具/产品动态）：
+  DeepSeek, Claude Code, GPT 新功能, Cursor, AI 编程,
+  AI 工具实测, AI 视频工具
+
+低优先（远离受众，慎选）：
+  AI 融资, AI 政策, AI 学术论文, AI 芯片, AI 安全研究
+  → 这类只有转换成"小老板视角"后才能用
 ```
 
 ---
 
-## Step 2: 选题筛选
+## Step 2: 选题筛选 + 受众匹配
 
-### 核心筛选逻辑
+### 核心原则
 
 **不是什么 AI 新闻都写，只写能打中小老板痛点的。**
+**每个选题必须先做「受众匹配分析」，再决定要不要写。**
+
+### 2.1 四维打分
 
 每个候选按 4 维度打分（1-5 分）：
 
@@ -156,9 +178,47 @@ web_search("AI 替代人工 省成本 小老板")
 | 时效性 | ×1 | 24h 内热点 > 一周内 > 过期 |
 | 情绪共鸣 | ×1 | "终于有人说人话了" / "原来还能这样" |
 
-**总分 > 12 才入选**。纯技术新闻（如某模型发了论文）如果跟老板落地无关就不选。
+**总分 > 12 才入选**。纯技术新闻如果跟老板落地无关就不选。
 
-### 5 篇选题配比
+### 2.2 受众匹配分析（必做）
+
+**每个入选选题必须输出以下分析，给灰太狼确认后才能动笔：**
+
+```
+选题：{标题方向}
+X 热点源：{原始推文作者 + 核心内容}
+
+受众匹配：
+  ✅ 直击痛点：{说明为什么小老板会关心}
+  ✅ 可操作：{读完能做什么}
+  ✅ 情绪共鸣：{引发什么情绪}
+  ⚠️ 需注意：{潜在问题/需要转换的角度}
+
+→ 转换角度：{从原始热点 → 小老板视角的转换}
+标题方向：{最终标题}
+类型：[工具实测/落地案例/认知升级/热点评论]
+CTA 模式：A/B/C
+```
+
+### 2.3 选题角度转换（关键技巧）
+
+```
+原始热点 → 小老板视角
+
+❌ "DeepSeek V4 发布，万亿参数"
+✅ "DeepSeek V4 免费用了，小团队可以拿它干这 3 件事"
+
+❌ "AI Agent 市场规模将达 XXX 亿"
+✅ "我用 AI Agent 替代了半个客服，一个月省了 6000 块"
+
+❌ "Uber CTO 说 Claude Code 花光预算"
+✅ "Uber 全年 AI 预算被一个工具花光了，这工具到底有多猛"
+
+❌ "2026 Q1 科技裁员 78557 人"
+✅ "大厂用 AI 替掉的那些岗位，你的团队里也有"
+```
+
+### 2.4 五篇选题配比
 
 ```
 每天必须覆盖：
@@ -174,19 +234,18 @@ web_search("AI 替代人工 省成本 小老板")
   └ 跟前 3 天选题重复率 < 30%
 ```
 
-### 选题角度转换（关键技巧）
+### 2.5 选题确认流程
 
 ```
-原始热点 → 小老板视角
+⚠️ 铁律：选题必须经灰太狼确认后才能动笔写文案。
 
-❌ "DeepSeek V4 发布，万亿参数"
-✅ "DeepSeek V4 免费用了，小团队可以拿它干这 3 件事"
+流程：
+  1. 采集完成 → 输出 5 个选题（含受众匹配分析）
+  2. 发给灰太狼确认 → "这 5 个行不行？哪个要换/调角度？"
+  3. 灰太狼确认 → 进入 Step 3 素材深挖
+  4. 灰太狼要求调整 → 修改选题/补充搜索 → 回到 2
 
-❌ "AI Agent 市场规模将达 XXX 亿"
-✅ "我用 AI Agent 替代了半个客服，一个月省了 6000 块"
-
-❌ "斯坦福 AI 报告：美国投资 2859 亿"
-✅ "斯坦福报告里藏着一个信号：不会用 AI 的小公司要被淘汰了"
+绝不跳过确认直接写文案。
 ```
 
 ---
